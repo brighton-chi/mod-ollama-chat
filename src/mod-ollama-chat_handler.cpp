@@ -325,7 +325,7 @@ std::vector<std::string> ChatHandler_GetGroupStatus(Player* bot)
 }
 
 // --- Helper: Visible players ---
-std::vector<std::string> ChatHandler_GetVisiblePlayers(Player* bot, float radius = 100.0f)
+std::vector<std::string> ChatHandler_GetVisiblePlayers(Player* bot, float radius = 40.0f)
 {
     std::vector<std::string> players;
     if (!bot || !bot->GetMap()) return players;
@@ -356,7 +356,7 @@ std::vector<std::string> ChatHandler_GetVisiblePlayers(Player* bot, float radius
 }
 
 // --- Helper: Visible locations/objects (creatures and gameobjects) ---
-std::vector<std::string> ChatHandler_GetVisibleLocations(Player* bot, float radius = 100.0f)
+std::vector<std::string> ChatHandler_GetVisibleLocations(Player* bot, float radius = 40.0f)
 {
     std::vector<std::string> visible;
     if (!bot || !bot->GetMap()) return visible;
@@ -589,50 +589,47 @@ void PlayerBotChatHandler::ProcessChat(Player* player, uint32_t /*type*/, uint32
             chance = 0;
     }
     
-    std::vector<Player*> finalCandidates;
+        std::vector<Player*> finalCandidates;
     std::vector<std::pair<size_t, Player*>> mentionedBots;
+
     for (Player* bot : candidateBots)
     {
         if (g_DisableRepliesInCombat && bot->IsInCombat())
+        {
             continue;
-        uint32_t roll = urand(0, 99);
-        if (roll < chance)
-            finalCandidates.push_back(bot);
+        }
+        size_t pos = trimmedMsg.find(bot->GetName());
+        if (pos != std::string::npos)
+        {
+            mentionedBots.emplace_back(pos, bot);
+        }
     }
+
     if (!mentionedBots.empty())
     {
         std::sort(mentionedBots.begin(), mentionedBots.end(),
                   [](auto &a, auto &b) { return a.first < b.first; });
-        Player* chosenBot = mentionedBots.front().second;
-        finalCandidates.clear();
-        if (!senderIsBot)
+        Player* chosen = mentionedBots.front().second;
+        if (!(g_DisableRepliesInCombat && chosen->IsInCombat()))
         {
-            if (!(g_DisableRepliesInCombat && chosenBot->IsInCombat()))
-            {
-                finalCandidates.push_back(chosenBot);
-            }
-
-            if(g_DebugEnabled)
-            {
-                LOG_INFO("server.loading", "Non-bot player mentioned bot '{}', forcing reply.", chosenBot->GetName());
-            }
-        }
-        else
-        {
-            uint32_t roll = urand(0, 99);
-            if (roll < chance)
-                finalCandidates.push_back(chosenBot);
+            finalCandidates.push_back(chosen);
         }
     }
     else
     {
         for (Player* bot : candidateBots)
         {
-            uint32_t roll = urand(0, 99);
-            if (roll < chance)
+            if (g_DisableRepliesInCombat && bot->IsInCombat())
+            {
+                continue;
+            }
+            if (urand(0, 99) < chance)
+            {
                 finalCandidates.push_back(bot);
+            }
         }
     }
+
     
     if (finalCandidates.empty())
     {
@@ -859,7 +856,10 @@ std::string GenerateBotPrompt(Player* bot, std::string playerMessage, Player* pl
         fmt::arg("extra_info", extraInfo)
     );
 
-    prompt += GenerateBotGameStateSnapshot(bot);
+    if(g_EnableChatBotSnapshotTemplate)
+    {
+        prompt += GenerateBotGameStateSnapshot(bot);
+    }
 
     return prompt;
 }
